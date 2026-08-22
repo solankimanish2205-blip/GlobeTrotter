@@ -1,7 +1,7 @@
 {
   "name": "globetrotter-server",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -12,6 +12,7 @@
     "cors": "latest",
     "dotenv": "latest",
     "express": "latest",
+    "pg": "latest",
     "prisma": "latest",
     "@prisma/client": "latest"
   },
@@ -20,6 +21,7 @@
     "typescript": "latest",
     "@types/cors": "latest",
     "@types/express": "latest",
-    "@types/node": "latest"
+    "@types/node": "latest",
+    "@types/pg": "latest"
   }
 }
