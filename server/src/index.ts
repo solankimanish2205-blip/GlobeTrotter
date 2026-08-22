@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import { checkDatabase, pool } from './db.js';
 
+dotenv.config({ path: '../.env' });
 dotenv.config();
 
 const app = express();
@@ -21,46 +22,56 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+async function getOrCreateDemoUser() {
+  const existing = await pool.query('SELECT id, email, name FROM "User" ORDER BY "createdAt" LIMIT 1');
+  if (existing.rowCount) return existing.rows[0];
+  const created = await pool.query(
+    'INSERT INTO "User" (id, email, name, "createdAt", "updatedAt") VALUES (gen_random_uuid()::text, $1, $2, NOW(), NOW()) RETURNING id, email, name',
+    ['demo@globetrotter.local', 'GlobeTrotter Demo']
+  );
+  return created.rows[0];
+}
+
 app.get('/api/trips', async (_req, res) => {
   try {
     const trips = await pool.query(`
-      SELECT t.id, t.title, t.start_date, t.end_date, t.status,
-             COALESCE(json_agg(json_build_object('id', c.id, 'name', c.city_name, 'position', c.position)
-             ORDER BY c.position) FILTER (WHERE c.id IS NOT NULL), '[]') AS cities
-      FROM trips t
-      LEFT JOIN trip_cities c ON c.trip_id = t.id
+      SELECT t.id, t.title, t.description, t."startDate", t."endDate", t."createdAt", t."updatedAt",
+             COALESCE(json_agg(
+               json_build_object('id', c.id, 'name', c.name, 'sortOrder', c."sortOrder")
+               ORDER BY c."sortOrder"
+             ) FILTER (WHERE c.id IS NOT NULL), '[]') AS cities
+      FROM "Trip" t
+      LEFT JOIN "TripCity" c ON c."tripId" = t.id
       GROUP BY t.id
-      ORDER BY t.created_at DESC
+      ORDER BY t."createdAt" DESC
     `);
 
     const activities = await pool.query(`
-      SELECT a.id, a.trip_id, a.city_id, a.activity_date, a.title,
-             a.time_text, a.location, a.duration, a.notes
-      FROM activities a
-      ORDER BY a.activity_date, a.created_at
+      SELECT id, title, time, location, duration, notes, date, "tripId", "cityId", "createdAt", "updatedAt"
+      FROM "Activity"
+      ORDER BY date NULLS LAST, "createdAt"
     `);
 
-    const activityByTrip = new Map<number, any[]>();
+    const activityByTrip = new Map<string, any[]>();
     for (const activity of activities.rows) {
-      const list = activityByTrip.get(Number(activity.trip_id)) ?? [];
+      const list = activityByTrip.get(activity.tripId) ?? [];
       list.push(activity);
-      activityByTrip.set(Number(activity.trip_id), list);
+      activityByTrip.set(activity.tripId, list);
     }
 
     res.json(trips.rows.map((trip) => ({
       ...trip,
-      id: Number(trip.id),
-      cities: trip.cities.map((city: any) => ({ ...city, id: Number(city.id) })),
-      activities: activityByTrip.get(Number(trip.id)) ?? [],
+      cities: trip.cities,
+      activities: activityByTrip.get(trip.id) ?? [],
     })));
   } catch (error) {
-    console.error(error);
+    console.error('Unable to load trips:', error);
     res.status(500).json({ error: 'Unable to load trips' });
   }
 });
 
 app.post('/api/trips', async (req, res) => {
-  const { title, cities, startDate, endDate, status = 'Draft' } = req.body ?? {};
+  const { title, description = '', cities, startDate, endDate } = req.body ?? {};
   if (!title || !Array.isArray(cities) || cities.length === 0 || !startDate || !endDate || startDate > endDate) {
     return res.status(400).json({ error: 'title, cities, startDate and endDate are required' });
   }
@@ -68,24 +79,25 @@ app.post('/api/trips', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const user = await getOrCreateDemoUser();
+    const tripId = crypto.randomUUID();
     const tripResult = await client.query(
-      'INSERT INTO trips (title, start_date, end_date, status) VALUES ($1, $2, $3, $4) RETURNING id, title, start_date, end_date, status',
-      [title.trim(), startDate, endDate, status]
+      'INSERT INTO "Trip" (id, title, description, "startDate", "endDate", "createdAt", "updatedAt", "userId") VALUES ($1,$2,$3,$4,$5,NOW(),NOW(),$6) RETURNING id, title, description, "startDate", "endDate"',
+      [tripId, title.trim(), description, startDate, endDate, user.id]
     );
-    const trip = tripResult.rows[0];
 
-    for (const [position, city] of cities.map((c: unknown) => String(c).trim()).filter(Boolean).entries()) {
+    for (const [sortOrder, city] of cities.map((c: unknown) => String(c).trim()).filter(Boolean).entries()) {
       await client.query(
-        'INSERT INTO trip_cities (trip_id, city_name, position) VALUES ($1, $2, $3)',
-        [trip.id, city, position]
+        'INSERT INTO "TripCity" (id, name, "sortOrder", "tripId", "createdAt") VALUES ($1,$2,$3,$4,NOW())',
+        [crypto.randomUUID(), city, sortOrder, tripId]
       );
     }
 
     await client.query('COMMIT');
-    res.status(201).json({ ...trip, id: Number(trip.id) });
+    res.status(201).json(tripResult.rows[0]);
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error(error);
+    console.error('Unable to create trip:', error);
     res.status(500).json({ error: 'Unable to create trip' });
   } finally {
     client.release();
@@ -93,9 +105,9 @@ app.post('/api/trips', async (req, res) => {
 });
 
 app.put('/api/trips/:id', async (req, res) => {
-  const tripId = Number(req.params.id);
-  const { title, cities, startDate, endDate, status } = req.body ?? {};
-  if (!Number.isInteger(tripId) || !title || !Array.isArray(cities) || !cities.length || !startDate || !endDate || startDate > endDate) {
+  const tripId = req.params.id;
+  const { title, description = '', cities, startDate, endDate } = req.body ?? {};
+  if (!tripId || !title || !Array.isArray(cities) || !cities.length || !startDate || !endDate || startDate > endDate) {
     return res.status(400).json({ error: 'Invalid trip data' });
   }
 
@@ -103,40 +115,27 @@ app.put('/api/trips/:id', async (req, res) => {
   try {
     await client.query('BEGIN');
     const updated = await client.query(
-      'UPDATE trips SET title=$1, start_date=$2, end_date=$3, status=COALESCE($4,status), updated_at=NOW() WHERE id=$5 RETURNING id, title, start_date, end_date, status',
-      [title.trim(), startDate, endDate, status ?? null, tripId]
+      'UPDATE "Trip" SET title=$1, description=$2, "startDate"=$3, "endDate"=$4, "updatedAt"=NOW() WHERE id=$5 RETURNING id, title, description, "startDate", "endDate"',
+      [title.trim(), description, startDate, endDate, tripId]
     );
     if (!updated.rowCount) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Trip not found' });
     }
 
-    const normalizedCities = cities.map((c: unknown) => String(c).trim()).filter(Boolean);
-    const existing = await client.query('SELECT id, city_name FROM trip_cities WHERE trip_id=$1', [tripId]);
-    const existingByName = new Map(existing.rows.map((row) => [row.city_name, row.id]));
-    const keep = new Set<string>();
-
-    for (const [position, city] of normalizedCities.entries()) {
-      keep.add(city);
-      const existingId = existingByName.get(city);
-      if (existingId) {
-        await client.query('UPDATE trip_cities SET position=$1 WHERE id=$2', [position, existingId]);
-      } else {
-        await client.query('INSERT INTO trip_cities (trip_id, city_name, position) VALUES ($1, $2, $3)', [tripId, city, position]);
-      }
-    }
-
-    for (const row of existing.rows) {
-      if (!keep.has(row.city_name)) {
-        await client.query('DELETE FROM trip_cities WHERE id=$1', [row.id]);
-      }
+    await client.query('DELETE FROM "TripCity" WHERE "tripId"=$1', [tripId]);
+    for (const [sortOrder, city] of cities.map((c: unknown) => String(c).trim()).filter(Boolean).entries()) {
+      await client.query(
+        'INSERT INTO "TripCity" (id, name, "sortOrder", "tripId", "createdAt") VALUES ($1,$2,$3,$4,NOW())',
+        [crypto.randomUUID(), city, sortOrder, tripId]
+      );
     }
 
     await client.query('COMMIT');
-    res.json({ ...updated.rows[0], id: Number(updated.rows[0].id), cities: normalizedCities });
+    res.json(updated.rows[0]);
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error(error);
+    console.error('Unable to update trip:', error);
     res.status(500).json({ error: 'Unable to update trip' });
   } finally {
     client.release();
@@ -144,50 +143,46 @@ app.put('/api/trips/:id', async (req, res) => {
 });
 
 app.delete('/api/trips/:id', async (req, res) => {
-  const tripId = Number(req.params.id);
-  if (!Number.isInteger(tripId)) return res.status(400).json({ error: 'Invalid trip id' });
   try {
-    const result = await pool.query('DELETE FROM trips WHERE id=$1 RETURNING id', [tripId]);
+    const result = await pool.query('DELETE FROM "Trip" WHERE id=$1 RETURNING id', [req.params.id]);
     if (!result.rowCount) return res.status(404).json({ error: 'Trip not found' });
     res.status(204).send();
   } catch (error) {
-    console.error(error);
+    console.error('Unable to delete trip:', error);
     res.status(500).json({ error: 'Unable to delete trip' });
   }
 });
 
 app.post('/api/trips/:id/activities', async (req, res) => {
-  const tripId = Number(req.params.id);
+  const tripId = req.params.id;
   const { cityId, activityDate, title, time = 'Flexible', location = '', duration = '', notes = '' } = req.body ?? {};
-  if (!Number.isInteger(tripId) || !cityId || !activityDate || !title) {
+  if (!tripId || !cityId || !activityDate || !title) {
     return res.status(400).json({ error: 'cityId, activityDate and title are required' });
   }
 
   try {
-    const city = await pool.query('SELECT id FROM trip_cities WHERE id=$1 AND trip_id=$2', [cityId, tripId]);
+    const city = await pool.query('SELECT id FROM "TripCity" WHERE id=$1 AND "tripId"=$2', [cityId, tripId]);
     if (!city.rowCount) return res.status(404).json({ error: 'City not found for this trip' });
     const result = await pool.query(
-      `INSERT INTO activities (trip_id, city_id, activity_date, title, time_text, location, duration, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       RETURNING id, trip_id, city_id, activity_date, title, time_text, location, duration, notes`,
-      [tripId, cityId, activityDate, String(title).trim(), time, location, duration, notes]
+      `INSERT INTO "Activity" (id, title, time, location, duration, notes, date, "tripId", "cityId", "createdAt", "updatedAt")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())
+       RETURNING id, title, time, location, duration, notes, date, "tripId", "cityId"`,
+      [crypto.randomUUID(), String(title).trim(), time, location, duration, notes, activityDate, tripId, cityId]
     );
-    res.status(201).json({ ...result.rows[0], id: Number(result.rows[0].id) });
+    res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error(error);
+    console.error('Unable to create activity:', error);
     res.status(500).json({ error: 'Unable to create activity' });
   }
 });
 
 app.delete('/api/activities/:id', async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid activity id' });
   try {
-    const result = await pool.query('DELETE FROM activities WHERE id=$1 RETURNING id', [id]);
+    const result = await pool.query('DELETE FROM "Activity" WHERE id=$1 RETURNING id', [req.params.id]);
     if (!result.rowCount) return res.status(404).json({ error: 'Activity not found' });
     res.status(204).send();
   } catch (error) {
-    console.error(error);
+    console.error('Unable to delete activity:', error);
     res.status(500).json({ error: 'Unable to delete activity' });
   }
 });
