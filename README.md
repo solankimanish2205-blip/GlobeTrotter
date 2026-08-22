@@ -20,40 +20,39 @@ GlobeTrotter helps users plan multi-city journeys by creating itineraries, organ
 - Responsive web interface
 - Optional admin dashboard
 
-## Planned Architecture
+## Architecture
 
 ```text
 GlobeTrotter/
-├── client/          # Frontend application
-├── server/          # Backend API
-├── database/        # Database schema, migrations and seed data
-├── docs/             # Architecture and project documentation
-├── .env.example      # Environment variable template
+├── client/          # React + TypeScript frontend
+├── server/          # Node.js + Express + TypeScript API
+├── database/        # PostgreSQL + Prisma schema
+├── docs/            # Architecture and development documentation
+├── .env.example     # Environment variable template
 ├── .gitignore
-└── README.md
+└── package.json     # npm workspace configuration
 ```
 
-## Proposed Technology Stack
+## Technology Stack
 
-- Frontend: React + TypeScript
+- Frontend: React + TypeScript + Vite
 - Backend: Node.js + Express + TypeScript
 - Database: PostgreSQL
+- ORM: Prisma
 - API: REST
-- Authentication: Secure session/JWT-based authentication
-
-The exact stack may be refined during implementation if project requirements make a different choice more appropriate.
+- Authentication: Planned JWT + bcrypt implementation
 
 ## Development Roadmap
 
 ### Phase 1 — Foundation
 
 - [x] Create GitHub repository
-- [ ] Establish project structure
-- [ ] Configure frontend
-- [ ] Configure backend
-- [ ] Design relational database
-- [ ] Add environment configuration
-- [ ] Add development documentation
+- [x] Establish project structure
+- [x] Configure frontend
+- [x] Configure backend
+- [x] Add initial relational database schema
+- [x] Add environment configuration
+- [x] Add development documentation
 
 ### Phase 2 — Core Application
 
@@ -81,6 +80,30 @@ The exact stack may be refined during implementation if project requirements mak
 - [ ] Deployment configuration
 - [ ] Final documentation
 
+## Getting Started
+
+Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/solankimanish2205-blip/GlobeTrotter.git
+cd GlobeTrotter
+npm install
+```
+
+Client development:
+
+```bash
+npm run dev:client
+```
+
+API development:
+
+```bash
+npm run dev:server
+```
+
+Create a local `.env` from `.env.example` before connecting PostgreSQL.
+
 ## Status
 
-**Phase 1 — Project foundation in progress.**
+**Phase 1 — Foundation scaffolded.**
