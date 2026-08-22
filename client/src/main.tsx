@@ -1,8 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import './styles.css';
 
-const trips = [
+type Trip = {
+  title: string;
+  route: string;
+  dates: string;
+  status: string;
+};
+
+const initialTrips: Trip[] = [
   {
     title: 'Europe Explorer',
     route: 'Paris · Amsterdam · Rome',
@@ -18,6 +25,39 @@ const trips = [
 ];
 
 function App() {
+  const [trips, setTrips] = useState<Trip[]>(initialTrips);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [destination, setDestination] = useState('');
+  const [cities, setCities] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const openCreateTrip = () => setIsCreateOpen(true);
+  const closeCreateTrip = () => setIsCreateOpen(false);
+
+  const createTrip = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const cityList = cities
+      .split(',')
+      .map((city) => city.trim())
+      .filter(Boolean);
+
+    const title = destination.trim() || cityList[0] || 'New Adventure';
+    const route = cityList.length > 0 ? cityList.join(' · ') : title;
+    const dates = startDate && endDate ? `${startDate} — ${endDate}` : 'Dates not set';
+
+    setTrips((currentTrips) => [
+      { title, route, dates, status: 'Draft' },
+      ...currentTrips,
+    ]);
+
+    setDestination('');
+    setCities('');
+    setStartDate('');
+    setEndDate('');
+    setIsCreateOpen(false);
+  };
+
   return (
     <div className="app-shell">
       <header className="navbar">
@@ -43,8 +83,8 @@ function App() {
               and keep your travel plans in one place.
             </p>
             <div className="hero-actions">
-              <button className="primary-button" type="button">＋ Create New Trip</button>
-              <button className="secondary-button" type="button">Explore destinations</button>
+              <button className="primary-button" type="button" onClick={openCreateTrip}>＋ Create New Trip</button>
+              <a className="secondary-button" href="#discover">Explore destinations</a>
             </div>
           </div>
           <div className="hero-card" aria-label="Trip planning preview">
@@ -73,12 +113,12 @@ function App() {
               <span className="eyebrow">YOUR PLANS</span>
               <h2>Upcoming adventures</h2>
             </div>
-            <button className="text-button" type="button">View all →</button>
+            <button className="text-button" type="button" onClick={openCreateTrip}>＋ New trip</button>
           </div>
 
           <div className="trip-grid">
-            {trips.map((trip) => (
-              <article className="trip-card" key={trip.title}>
+            {trips.map((trip, index) => (
+              <article className="trip-card" key={`${trip.title}-${index}`}>
                 <div className="trip-image" aria-hidden="true"><span>✦</span></div>
                 <div className="trip-content">
                   <div className="trip-topline">
@@ -92,7 +132,7 @@ function App() {
               </article>
             ))}
 
-            <button className="new-trip-card" type="button">
+            <button className="new-trip-card" type="button" onClick={openCreateTrip}>
               <span className="plus-circle">＋</span>
               <strong>Create another trip</strong>
               <span>Start with a destination and we'll build from there.</span>
@@ -113,6 +153,58 @@ function App() {
         <span>✦ GlobeTrotter</span>
         <span>Travel planning, simplified.</span>
       </footer>
+
+      {isCreateOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeCreateTrip}>
+          <section
+            className="create-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-trip-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button className="modal-close" type="button" aria-label="Close" onClick={closeCreateTrip}>×</button>
+            <span className="eyebrow">NEW ADVENTURE</span>
+            <h2 id="create-trip-title">Create your trip</h2>
+            <p className="modal-intro">Start with the basics. You can build the day-by-day itinerary next.</p>
+
+            <form onSubmit={createTrip}>
+              <label>
+                Trip name / destination
+                <input
+                  value={destination}
+                  onChange={(event) => setDestination(event.target.value)}
+                  placeholder="e.g. Italy Summer Trip"
+                  required
+                />
+              </label>
+
+              <label>
+                Cities <span className="field-hint">comma separated</span>
+                <input
+                  value={cities}
+                  onChange={(event) => setCities(event.target.value)}
+                  placeholder="Rome, Florence, Venice"
+                  required
+                />
+              </label>
+
+              <div className="date-grid">
+                <label>
+                  Start date
+                  <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+                </label>
+                <label>
+                  End date
+                  <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+                </label>
+              </div>
+
+              <button className="primary-button modal-submit" type="submit">Create trip →</button>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
