@@ -2,11 +2,18 @@
   "name": "globetrotter",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["client", "server"],
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
     "dev:client": "npm --workspace client run dev",
     "dev:server": "npm --workspace server run dev",
     "build:client": "npm --workspace client run build",
     "build:server": "npm --workspace server run build"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4"
   }
 }
